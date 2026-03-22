@@ -8,160 +8,153 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Log startup information
+console.log(`🚀 Starting server on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+
 const API_KEY = process.env.GEMINI_API_KEY;
 const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
-const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 25000);
-const MAX_OUTPUT_TOKENS_TEXT = Number(process.env.MAX_OUTPUT_TOKENS_TEXT || 1024);
-const MAX_OUTPUT_TOKENS_IMAGE = Number(process.env.MAX_OUTPUT_TOKENS_IMAGE || 1536);
-const CHAT_TEMPERATURE = Number(process.env.CHAT_TEMPERATURE || 0.4);
-const CHAT_TOP_P = Number(process.env.CHAT_TOP_P || 0.9);
-const CHAT_CACHE_TTL_SECONDS = Number(process.env.CHAT_CACHE_TTL_SECONDS || 60);
-const textResponseCache = new Map();
 
 if (!API_KEY) {
-  console.warn('⚠️ GEMINI_API_KEY not found. AI features will be limited. Using rule-based responses only.');
+    console.warn('⚠️ GEMINI_API_KEY not found. AI features will be limited. Using rule-based responses only.');
 }
-
 
 app.use(cors());
 app.use(express.json({ limit: '12mb' }));
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/heic',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/heic',
 ]);
 
 const sanitizePrompt = (value) => {
-  if (typeof value !== 'string') return '';
-  return value.trim().slice(0, 4000);
+    if (typeof value !== 'string') return '';
+    return value.trim().slice(0, 4000);
 };
-const buildCacheKey = (message) => message.toLowerCase().replace(/\s+/g, ' ').trim()
+
 const buildSystemInstruction = ({ hasImage }) => {
-  if (hasImage) {
+    if (hasImage) {
+        return (
+            "You are an expert plant pathologist and agronomist for Indian farming contexts. " +
+            "When the user provides an image, identify the likely crop and disease (or nutrient deficiency/pest damage), " +
+            "include confidence level, reasoning from visible cues, and practical treatment steps. " +
+            "Avoid unsafe pesticide dosage claims; suggest label-following and local agri extension guidance."
+        );
+    }
     return (
-      "You are an expert plant pathologist and agronomist for Indian farming contexts. " +
-      "When the user provides an image, identify the likely crop and disease (or nutrient deficiency/pest damage), " +
-      "include confidence level, reasoning from visible cues, and practical treatment steps. " +
-      "Avoid unsafe pesticide dosage claims; suggest label-following and local agri extension guidance."
+        "You are AgriTech AI Assistant for Indian farmers. Provide complete, practical, structured answers. " +
+        "Cover recommendations, risks, and next steps clearly. Keep language simple but do not omit important details."
     );
-  }
-  return (
-    "You are AgriTech AI Assistant for Indian farmers. Provide complete, practical, structured answers. " +
-    "Cover recommendations, risks, and next steps clearly. Keep language simple but do not omit important details."
-  );
 };
 
 const buildUserPrompt = ({ message, hasImage }) => {
-  if (hasImage) {
-    return (
-      `${message || 'Analyze this plant image.'}\n\n` +
-      "Return in this exact structure:\n" +
-      "1) Crop Detected (or best guess)\n" +
-      "2) Likely Issue(s)\n" +
-      "3) Confidence (High/Medium/Low)\n" +
-      "4) Why (visible symptoms)\n" +
-      "5) Immediate Action (next 24-48h)\n" +
-      "6) Treatment Options (organic + chemical categories)\n" +
-      "7) Prevention for next cycle\n" +
-      "8) When to consult local expert"
-    );
-  }
-  return `${message}\n\nPlease provide a complete answer with actionable steps and a short summary.`;
+    if (hasImage) {
+        return (
+            `${message || 'Analyze this plant image.'}\n\n` +
+            "Return in this exact structure:\n" +
+            "1) Crop Detected (or best guess)\n" +
+            "2) Likely Issue(s)\n" +
+            "3) Confidence (High/Medium/Low)\n" +
+            "4) Why (visible symptoms)\n" +
+            "5) Immediate Action (next 24-48h)\n" +
+            "6) Treatment Options (organic + chemical categories)\n" +
+            "7) Prevention for next cycle\n" +
+            "8) When to consult local expert"
+        );
+    }
+    return `${message}\n\nPlease provide a complete answer with actionable steps and a short summary.`;
 };
 
 app.post('/api/chat', async (req, res) => {
-  const { message, image, imageMimeType } = req.body;
-    const requestStartedAt = Date.now();
-  const cleanMessage = sanitizePrompt(message);
-  const hasImage = typeof image === 'string' && image.length > 0;
+    const { message, image, imageMimeType } = req.body;
+    const cleanMessage = sanitizePrompt(message);
+    const hasImage = typeof image === 'string' && image.length > 0;
 
-  if (!cleanMessage && !hasImage) {
-    return res.status(400).json({ error: 'Message or image required' });
-  }
-
-  try {
-    // If no API key, return a helpful message about using the JSON chatbot
-    if (!API_KEY) {
-      return res.json({
-        reply: "🤖 I'm currently running in offline mode. For AI-powered responses, please configure your GEMINI_API_KEY. Meanwhile, try our rule-based chatbot at /chat for instant farming advice!"
-      });
+    if (!cleanMessage && !hasImage) {
+        return res.status(400).json({ error: 'Message or image required' });
     }
 
-    const mimeType = ALLOWED_IMAGE_MIME_TYPES.has(String(imageMimeType || '').toLowerCase())
-      ? String(imageMimeType).toLowerCase()
-      : 'image/jpeg';
-
-    const payload = {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text:
-                `${buildSystemInstruction({ hasImage })}\n\n` +
-                `${buildUserPrompt({ message: cleanMessage, hasImage })}`,
-            },
-            ...(hasImage
-              ? [{
-                  inline_data: {
-                    mime_type: mimeType,
-                    data: image
-                  }
-                }]
-              : [])
-          ]
+    try {
+        // If no API key, return a helpful message about using the JSON chatbot
+        if (!API_KEY) {
+            return res.json({
+                reply: "🤖 I'm currently running in offline mode. For AI-powered responses, please configure your GEMINI_API_KEY. Meanwhile, try our rule-based chatbot at /chat for instant farming advice!"
+            });
         }
-      ],
-      generationConfig: {
-        temperature: 0.4,
-        topP: 0.9,
-        maxOutputTokens: 3072
-      }
-    };
 
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+        const mimeType = ALLOWED_IMAGE_MIME_TYPES.has(String(imageMimeType || '').toLowerCase())
+            ? String(imageMimeType).toLowerCase()
+            : 'image/jpeg';
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('API Error:', errText);
-      return res.status(500).json({ reply: '⚠️ AI service temporarily unavailable. Please try our rule-based chatbot for instant farming advice!' });
+        const payload = {
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        {
+                            text:
+                                `${buildSystemInstruction({ hasImage })}\n\n` +
+                                `${buildUserPrompt({ message: cleanMessage, hasImage })}`,
+                        },
+                        ...(hasImage
+                            ? [{
+                                inline_data: {
+                                    mime_type: mimeType,
+                                    data: image
+                                }
+                            }]
+                            : [])
+                    ]
+                }
+            ],
+            generationConfig: {
+                temperature: 0.4,
+                topP: 0.9,
+                maxOutputTokens: 3072
+            }
+        };
+
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error('API Error:', errText);
+            return res.status(500).json({ reply: '⚠️ AI service temporarily unavailable. Please try our rule-based chatbot for instant farming advice!' });
+        }
+
+        const data = await response.json();
+
+        const reply =
+            data?.candidates?.[0]?.content?.parts?.map(p => p.text)?.join('') ||
+            "I couldn't analyze that. Please try again.";
+
+        res.json({ reply: reply.trim() });
+    } catch (err) {
+        console.error('Server Error:', err);
+        res.status(500).json({ reply: '⚠️ Server error. Please try our rule-based chatbot for instant farming advice!' });
     }
-
-    const data = await response.json();
-
-    const reply =
-      data?.candidates?.[0]?.content?.parts?.map(p => p.text)?.join('') ||
-      "I couldn't analyze that. Please try again.";
-
-    res.json({ reply: reply.trim() });
-  } catch (err) {
-    console.error('Server Error:', err);
-    res.status(500).json({ reply: '⚠️ Server error. Please try our rule-based chatbot for instant farming advice!' });
-  }
 });
-
 app.get('/health', (_req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    service: 'farmgo-chat-server',
-    timestamp: new Date().toISOString(),
-    uptimeSeconds: Math.floor(process.uptime()),
-    aiFeaturesEnabled: Boolean(API_KEY),
-  });
+    res.status(200).json({
+        status: 'ok',
+        service: 'farmgo-chat-server',
+        timestamp: new Date().toISOString(),
+        uptimeSeconds: Math.floor(process.uptime()),
+        aiFeaturesEnabled: Boolean(API_KEY),
+    });
 });
 
 app.use(express.static('.'));
 
 app.listen(PORT, () => {
-  console.log(`🚀 AgriTech Chatbot Server running on http://localhost:${PORT}`);
-  console.log(`🤖 AI Features: ${API_KEY ? 'ENABLED' : 'DISABLED (using fallback mode)'}`);
+    console.log(`🚀 AgriTech Chatbot Server running on http://localhost:${PORT}`);
+    console.log(`🤖 AI Features: ${API_KEY ? 'ENABLED' : 'DISABLED (using fallback mode)'}`);
 });
 
 
