@@ -10,6 +10,13 @@ const PORT = process.env.PORT || 3000;
 
 const API_KEY = process.env.GEMINI_API_KEY;
 const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 25000);
+const MAX_OUTPUT_TOKENS_TEXT = Number(process.env.MAX_OUTPUT_TOKENS_TEXT || 1024);
+const MAX_OUTPUT_TOKENS_IMAGE = Number(process.env.MAX_OUTPUT_TOKENS_IMAGE || 1536);
+const CHAT_TEMPERATURE = Number(process.env.CHAT_TEMPERATURE || 0.4);
+const CHAT_TOP_P = Number(process.env.CHAT_TOP_P || 0.9);
+const CHAT_CACHE_TTL_SECONDS = Number(process.env.CHAT_CACHE_TTL_SECONDS || 60);
+const textResponseCache = new Map();
 
 if (!API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY not found. AI features will be limited. Using rule-based responses only.');
@@ -30,6 +37,8 @@ const sanitizePrompt = (value) => {
   if (typeof value !== 'string') return '';
   return value.trim().slice(0, 4000);
 };
+
+const buildCacheKey = (message) => message.toLowerCase().replace(/\s+/g, ' ').trim();
 
 const buildSystemInstruction = ({ hasImage }) => {
   if (hasImage) {
@@ -65,6 +74,7 @@ const buildUserPrompt = ({ message, hasImage }) => {
 };
 
 app.post('/api/chat', async (req, res) => {
+  const requestStartedAt = Date.now();
   const { message, image, imageMimeType } = req.body;
   const cleanMessage = sanitizePrompt(message);
   const hasImage = typeof image === 'string' && image.length > 0;
@@ -79,6 +89,18 @@ app.post('/api/chat', async (req, res) => {
       return res.json({
         reply: "🤖 I'm currently running in offline mode. For AI-powered responses, please configure your GEMINI_API_KEY. Meanwhile, try our rule-based chatbot at /chat for instant farming advice!"
       });
+    }
+
+    // Cache only text prompts to speed up repeated common queries.
+    const cacheKey = !hasImage ? buildCacheKey(cleanMessage) : '';
+    if (cacheKey) {
+      const cached = textResponseCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return res.json({ reply: cached.reply });
+      }
+      if (cached && cached.expiresAt <= Date.now()) {
+        textResponseCache.delete(cacheKey);
+      }
     }
 
     const mimeType = ALLOWED_IMAGE_MIME_TYPES.has(String(imageMimeType || '').toLowerCase())
@@ -107,17 +129,25 @@ app.post('/api/chat', async (req, res) => {
         }
       ],
       generationConfig: {
-        temperature: 0.4,
-        topP: 0.9,
-        maxOutputTokens: 3072
+        temperature: CHAT_TEMPERATURE,
+        topP: CHAT_TOP_P,
+        maxOutputTokens: hasImage ? MAX_OUTPUT_TOKENS_IMAGE : MAX_OUTPUT_TOKENS_TEXT
       }
     };
 
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    let response;
+    try {
+      response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errText = await response.text();
@@ -131,8 +161,22 @@ app.post('/api/chat', async (req, res) => {
       data?.candidates?.[0]?.content?.parts?.map(p => p.text)?.join('') ||
       "I couldn't analyze that. Please try again.";
 
+    if (!hasImage && cleanMessage) {
+      textResponseCache.set(buildCacheKey(cleanMessage), {
+        reply: reply.trim(),
+        expiresAt: Date.now() + CHAT_CACHE_TTL_SECONDS * 1000,
+      });
+    }
+
+    console.log(`chat_api_latency_ms=${Date.now() - requestStartedAt}`);
+
     res.json({ reply: reply.trim() });
   } catch (err) {
+    if (err?.name === 'AbortError') {
+      return res.status(504).json({
+        reply: '⏱️ AI response timed out. Please retry with a shorter prompt.',
+      });
+    }
     console.error('Server Error:', err);
     res.status(500).json({ reply: '⚠️ Server error. Please try our rule-based chatbot for instant farming advice!' });
   }
