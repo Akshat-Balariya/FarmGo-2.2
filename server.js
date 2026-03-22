@@ -15,6 +15,7 @@ if (!API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY not found. AI features will be limited. Using rule-based responses only.');
 }
 
+
 app.use(cors());
 app.use(express.json({ limit: '12mb' }));
 
