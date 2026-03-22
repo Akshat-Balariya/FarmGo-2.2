@@ -52,7 +52,11 @@ export default function DiseaseDetection() {
         },
         "chat",
       );
-      setAnalysis(response.reply || "No analysis returned.");
+      const analysisText =
+        typeof response?.reply === "string" && response.reply.trim().length > 0
+          ? response.reply
+          : "No analysis returned.";
+      setAnalysis(analysisText);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run disease analysis.");
     } finally {

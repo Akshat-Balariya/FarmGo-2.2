@@ -27,10 +27,10 @@ export const requestJson = async <T>(
     },
   });
 
-  const payload = (await response.json().catch(() => null)) as
-    | ApiErrorPayload
-    | T
-    | null;
+  const contentType = response.headers.get("content-type") ?? "";
+  const payload = (contentType.includes("application/json")
+    ? await response.json().catch(() => null)
+    : null) as ApiErrorPayload | T | null;
 
   if (!response.ok) {
     const errorMessage =
@@ -38,6 +38,10 @@ export const requestJson = async <T>(
       (payload as ApiErrorPayload | null)?.error ||
       "Request failed. Please try again.";
     throw new Error(errorMessage);
+  }
+
+  if (payload === null || typeof payload !== "object") {
+    throw new Error("Server returned an invalid response. Check API base URL and backend route.");
   }
 
   return payload as T;

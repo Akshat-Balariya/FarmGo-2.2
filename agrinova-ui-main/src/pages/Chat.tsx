@@ -34,7 +34,11 @@ export default function Chat() {
         },
         "chat",
       );
-      setMessages((prev) => [...prev, { role: "bot", text: data.reply || "I could not generate a response right now." }]);
+      const botReply =
+        typeof data?.reply === "string" && data.reply.trim().length > 0
+          ? data.reply
+          : "I could not generate a response right now.";
+      setMessages((prev) => [...prev, { role: "bot", text: botReply }]);
     } catch (err) {
       const fallback =
         err instanceof Error

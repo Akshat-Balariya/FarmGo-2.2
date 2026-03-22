@@ -138,6 +138,16 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+app.get('/health', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'farmgo-chat-server',
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    aiFeaturesEnabled: Boolean(API_KEY),
+  });
+});
+
 app.use(express.static('.'));
 
 app.listen(PORT, () => {
