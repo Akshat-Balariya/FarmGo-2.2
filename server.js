@@ -10,6 +10,13 @@ const PORT = process.env.PORT || 3000;
 
 const API_KEY = process.env.GEMINI_API_KEY;
 const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 25000);
+const MAX_OUTPUT_TOKENS_TEXT = Number(process.env.MAX_OUTPUT_TOKENS_TEXT || 1024);
+const MAX_OUTPUT_TOKENS_IMAGE = Number(process.env.MAX_OUTPUT_TOKENS_IMAGE || 1536);
+const CHAT_TEMPERATURE = Number(process.env.CHAT_TEMPERATURE || 0.4);
+const CHAT_TOP_P = Number(process.env.CHAT_TOP_P || 0.9);
+const CHAT_CACHE_TTL_SECONDS = Number(process.env.CHAT_CACHE_TTL_SECONDS || 60);
+const textResponseCache = new Map();
 
 if (!API_KEY) {
   console.warn('⚠️ GEMINI_API_KEY not found. AI features will be limited. Using rule-based responses only.');
@@ -31,7 +38,7 @@ const sanitizePrompt = (value) => {
   if (typeof value !== 'string') return '';
   return value.trim().slice(0, 4000);
 };
-
+const buildCacheKey = (message) => message.toLowerCase().replace(/\s+/g, ' ').trim()
 const buildSystemInstruction = ({ hasImage }) => {
   if (hasImage) {
     return (
@@ -67,6 +74,7 @@ const buildUserPrompt = ({ message, hasImage }) => {
 
 app.post('/api/chat', async (req, res) => {
   const { message, image, imageMimeType } = req.body;
+    const requestStartedAt = Date.now();
   const cleanMessage = sanitizePrompt(message);
   const hasImage = typeof image === 'string' && image.length > 0;
 
