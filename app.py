@@ -58,7 +58,22 @@ celery = make_celery(app)
 # Import models after db initialization
 from backend.models import User
 
-CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5500"}})
+def _parse_cors_origins():
+    """Parse allowed origins from env, with sane local/prod defaults."""
+    raw_origins = os.getenv('CORS_ORIGINS', '').strip()
+    origins = [origin.strip().rstrip('/') for origin in raw_origins.split(',') if origin.strip()]
+
+    if not origins:
+        origins = [
+            'http://127.0.0.1:5500',
+            'http://localhost:5500',
+            'https://farmgo-2-2-2.onrender.com',
+        ]
+
+    return origins
+
+
+CORS(app, resources={r"/*": {"origins": _parse_cors_origins()}})
 
 app.register_blueprint(health_bp)
 app.register_blueprint(files_bp)
