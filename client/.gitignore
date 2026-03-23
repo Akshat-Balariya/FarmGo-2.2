@@ -1,0 +1,95 @@
+# ==================================================
+# Android Studio & IntelliJ IDEA
+# ==================================================
+*.iml
+.gradle
+.gradle/
+/local.properties
+/.idea/
+.idea/
+.idea/*
+!.idea/runConfigurations
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+
+# ==================================================
+# Build & Output
+# ==================================================
+/build
+/captures
+build/
+*.apk
+*.aar
+*.ap_
+*.aab
+output/
+outputs/
+
+# ==================================================
+# Native Development Kit
+# ==================================================
+.externalNativeBuild
+.cxx
+CMakeFiles/
+
+# ==================================================
+# Gradle Wrapper
+# ==================================================
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+.gradle/
+gradle-wrapper.jar
+.gradletasknamecache
+
+# ==================================================
+# Local Properties (Sensitive!)
+# ==================================================
+local.properties
+/local.properties
+gradle.properties.local
+*.properties.local
+signing.properties
+
+# ==================================================
+# Logs
+# ==================================================
+*.log
+npm-debug.log*
+
+# ==================================================
+# Environment & Secrets (CRITICAL!)
+# ==================================================
+.env
+.env.local
+.env.*.local
+*.keystore
+*.jks
+*.pem
+*.key
+secrets.json
+
+# ==================================================
+# IDE & Editor
+# ==================================================
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.sublime-workspace
+
+# ==================================================
+# Keep These (Important!)
+# ==================================================
+# DO NOT IGNORE:
+# - gradle.properties (build configuration)
+# - build.gradle.kts (build script)
+# - gradle/ (gradle wrapper)
+# - src/ (all source code)
+# - res/ (resources)
