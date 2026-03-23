@@ -19,12 +19,16 @@ export const requestJson = async <T>(
   init?: RequestInit,
   target: Target = "api",
 ): Promise<T> => {
+  const headers = new Headers(init?.headers ?? undefined);
+  const hasBody = init?.body !== undefined && init?.body !== null;
+
+  if (hasBody && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(buildUrl(path, target), {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
 
   const contentType = response.headers.get("content-type") ?? "";
